@@ -1,0 +1,16 @@
+openocd/
+build/
+*.bin
+*.elf
+*.map
+*.o
+*.d
+*.lst
+*.log
+*.gdb
+*.hex
+*.dmp
+*.srec
+__pycache__/
+*.pyc
+openocd_temp/
