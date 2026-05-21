@@ -12,6 +12,10 @@
 
 Drag a `.hex` file, click **Flash**, done. Everything is self-contained inside the `easy_flash/` folder — nothing touches your system.
 
+<p align="center">
+  <img src="image/gui.png" alt="STM32 EASY FLASH GUI screenshot" width="700">
+</p>
+
 ---
 
 ## 🧠 Motivation
