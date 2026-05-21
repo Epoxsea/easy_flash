@@ -16,7 +16,7 @@ Drag a `.hex` file, click **Flash**, done. Everything is self-contained inside t
 
 ## 🧠 Motivation
 
-I work in a robotics team with people from all backgrounds — hardware, mechanical, electrical, and software. Flashing firmware onto an STM32 board should not require understanding OpenOCD, drivers, or terminal commands. 
+I work in a robotics team with people from all backgrounds — hardware, mechanical, electrical, and software. Flashing firmware onto an STM32 board should not require understanding OpenOCD, drivers, or terminal commands.
 
 Existing tools like STM32 Programmer are powerful but clunky and intimidating for non-developers. This project exists so **anyone on the team** can grab a `.hex` file, plug in an ST-Link, and flash in seconds — no explanations needed.
 
@@ -25,6 +25,7 @@ Existing tools like STM32 Programmer are powerful but clunky and intimidating fo
 ## 🚀 Quick Start
 
 ### 🪟 Windows
+
 | Step | Action |
 |------|--------|
 | 1 | Double-click **`STM32 EASY FLASH.bat`** |
@@ -34,6 +35,10 @@ Existing tools like STM32 Programmer are powerful but clunky and intimidating fo
 | 5 | Click **Flash to STM32** ✅ |
 
 ### 🍎 macOS / 🐧 Linux
+
+> **⚠️ Note for Mac/Linux users:** This version requires **Python 3** and the **tkinter** library.
+> See the tips below the table for install commands.
+
 | Step | Action |
 |------|--------|
 | 1 | Open Terminal in the `easy_flash/` folder |
@@ -192,6 +197,7 @@ Distributed under the **MIT License**. See `LICENSE` for details.
 ---
 
 *Made for robotics teams, hackers, and anyone who just wants to flash a chip.*
+
 - ST-Link v2 (or v3) programmer must be connected via USB.
 - After flashing, the MCU is verified and reset automatically.
 - Drag-and-drop a `.hex` file onto the GUI window for quick loading.
