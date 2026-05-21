@@ -1,177 +1,197 @@
+<p align="center">
+  <img src="https://img.shields.io/badge/platform-Windows%20|%20macOS%20|%20Linux-blue?style=flat-square" alt="Platform">
+  <img src="https://img.shields.io/badge/python-3.6+-brightgreen?style=flat-square" alt="Python">
+  <img src="https://img.shields.io/badge/license-MIT-yellow?style=flat-square" alt="License">
+  <img src="https://img.shields.io/badge/status-beta-orange?style=flat-square" alt="Status">
+</p>
+
 # STM32 EASY FLASH
 
-> All-in-one tool for flashing firmware to **STM32** microcontrollers via **ST-Link**.
->
-> **No coding knowledge required. Nothing to install. Completely self-contained.**
->
-> Works on **Windows · macOS · Linux**. Never touches system PATH or global environment.
+> **Zeroconf firmware flasher for STM32 via ST-Link.**  
+> One click. No setup. No PATH pollution. Works on every OS.
+
+Drag a `.hex` file, click **Flash**, done. Everything is self-contained inside the `easy_flash/` folder — nothing touches your system.
 
 ---
 
-## 📋 Quick Start
+## 🧠 Motivation
+
+I work in a robotics team with people from all backgrounds — hardware, mechanical, electrical, and software. Flashing firmware onto an STM32 board should not require understanding OpenOCD, drivers, or terminal commands. 
+
+Existing tools like STM32 Programmer are powerful but clunky and intimidating for non-developers. This project exists so **anyone on the team** can grab a `.hex` file, plug in an ST-Link, and flash in seconds — no explanations needed.
+
+---
+
+## 🚀 Quick Start
 
 ### 🪟 Windows
-
 | Step | Action |
 |------|--------|
 | 1 | Double-click **`STM32 EASY FLASH.bat`** |
-| 2 | On first launch → auto-downloads OpenOCD (one-time, ~8 MB) |
-| 3 | Click **"Browse..."** → select your `.hex` file |
+| 2 | Auto-downloads OpenOCD on first run (one-time, ~8 MB) |
+| 3 | Click **Browse...** → select your `.hex` file |
 | 4 | Connect ST-Link to the board |
-| 5 | Click **"Flash to STM32"** |
+| 5 | Click **Flash to STM32** ✅ |
 
 ### 🍎 macOS / 🐧 Linux
-
 | Step | Action |
 |------|--------|
 | 1 | Open Terminal in the `easy_flash/` folder |
 | 2 | `chmod +x run.sh && ./run.sh` |
-| 3 | On first launch → auto-downloads OpenOCD (one-time, ~8 MB) |
-| 4 | Click **"Browse..."** → select your `.hex` file |
+| 3 | Auto-downloads OpenOCD on first run (one-time, ~8 MB) |
+| 4 | Click **Browse...** → select your `.hex` file |
 | 5 | Connect ST-Link to the board |
-| 6 | Click **"Flash to STM32"** |
+| 6 | Click **Flash to STM32** ✅ |
 
-> 💡 **macOS** — may need: `brew install python-tk`
->
-> 💡 **Linux** — may need: `sudo apt install python3-tk` (Ubuntu) or `sudo dnf install python3-tkinter` (Fedora)
+> 💡 **macOS** — may need: `brew install python-tk`  
+> 💡 **Linux** — may need: `sudo apt install python3-tk` (Ubuntu) / `sudo dnf install python3-tkinter` (Fedora)
 
 ---
 
-## 📦 What's Inside
+## 📂 Project Structure
 
 ```
 easy_flash/
+├── STM32 EASY FLASH.bat     Windows  — double-click GUI launcher
+├── run.sh                   Mac/Linux — ./run.sh GUI launcher
+├── flash_gui.py             Cross-platform GUI    (Python/tkinter)
+├── flash.py                 Cross-platform CLI    (Python)
+├── flash_gui.ps1            Windows PowerShell GUI (legacy)
+├── flash.bat                Windows CLI fallback
+├── flash.ps1                Windows CLI fallback
+├── TODO.md                  Roadmap & ideas
+├── README.md                ← you are here
 │
-├── STM32 EASY FLASH.bat   ← Windows:  double-click to launch GUI
-├── run.sh                 ← Mac/Linux: ./run.sh to launch GUI
-│
-├── flash_gui.py           ← Cross-platform GUI  (Python / tkinter)
-├── flash.py               ← Cross-platform CLI  (Python)
-│
-├── flash_gui.ps1          ← Windows PowerShell GUI  (legacy fallback)
-├── flash.bat              ← Windows CLI  (legacy fallback)
-├── flash.ps1              ← Windows PowerShell CLI (legacy fallback)
-│
-├── README.md              ← This file
-│
-└── openocd/               ← ⏳ Auto-created on first launch
-    ├── windows/            ← Windows: openocd.exe + DLLs + scripts/
-    ├── macos/              ← macOS:   openocd + .dylib + scripts/
-    └── linux/              ← Linux:   openocd + .so + scripts/
+└── openocd/                 ⏳ auto-created
+    ├── windows/              openocd.exe + DLLs + scripts/
+    ├── macos/                openocd + .dylib + scripts/
+    └── linux/                openocd + .so + scripts/
 ```
 
 ---
 
-## ✅ What You Need
+## ✅ Requirements
 
 | Item | Notes |
 |------|-------|
-| **This `easy_flash/` folder** | Everything is inside here — nothing installed elsewhere |
-| **Python 3.6+** (any OS) | <https://www.python.org/downloads/> |
-| **Internet (first run only)** | Auto-downloads OpenOCD into `openocd/` folder |
-| **A `.hex` firmware file** | From your build (e.g. `build/2026-rov-Float-STM32.hex`) |
-| **ST-Link programmer** | Connected to your board via USB |
+| **Python 3.6+** | [python.org](https://www.python.org/downloads/) — any OS |
+| **Internet (first run)** | Auto-downloads OpenOCD (~8 MB) into `openocd/<os>/` |
+| **`.hex` firmware file** | From your build (e.g. `build/firmware.hex`) |
+| **ST-Link programmer** | v2 or v3 — plug via USB |
+
+Everything else is **bundled** inside `easy_flash/`. No system installs, no PATH edits.
 
 ---
 
 ## 🔌 ST-Link Driver
 
-The ST-Link programmer needs a driver to talk to OpenOCD.
+The ST-Link programmer needs a driver to communicate with OpenOCD.
 
-> ⚠️ **First time plugging in ST-Link?** Your OS handles the driver:
->
-> - **Windows** — auto-installs on first connection. Wait for "Device ready" notification.
-> - **macOS / Linux** — works natively (driver built into the OS).
+> ⚠️ **First time plugging in ST-Link?** Plug it in and wait for your OS to finish auto-install before flashing.
 
-| OS | Normal | If it doesn't work |
-|-----|--------|-------------------|
-| **Windows** | Plug & play — auto-installed | Use [Zadig](https://zadig.akeo.ie/) → select ST-Link → install **WinUSB** |
-| **macOS** | Works out of the box | `brew install libusb` |
-| **Linux** | Built into kernel | `sudo apt install libusb-1.0-0-dev` (Ubuntu/Debian) |
+| OS | Normal | Troubleshooting |
+|-----|--------|----------------|
+| **Windows** | Plug & play ✅ | Use [Zadig](https://zadig.akeo.ie/) → install **WinUSB** if you see `LIBUSB_ERROR` |
+| **macOS** | Works out of the box ✅ | `brew install libusb` |
+| **Linux** | Built into kernel ✅ | `sudo apt install libusb-1.0-0-dev` |
 
-> 🐧 **WSL / Linux — missing library errors?**  
-> If you see `error while loading shared libraries` when flashing, install the missing packages:
->
-> ```bash
-> sudo apt update
-> sudo apt install libftdi1-2 libhidapi-hidraw0 libusb-1.0-0
-> ```
->
-> The error will tell you exactly which `.so` file is missing — just `apt install` the corresponding package.
+### 🐧 WSL / Linux — missing shared library?
+
+If you see `error while loading shared libraries` when flashing:
+
+```bash
+sudo apt update
+sudo apt install libftdi1-2 libhidapi-hidraw0 libusb-1.0-0
+```
+
+The error message tells you exactly which `.so` is missing — `apt install` the matching package.
 
 ---
 
 ## 🔒 Safety Guarantees
 
-| Your system... | What we do |
-|---------------|------------|
-| **System PATH** | 🚫 Never touched |
-| **Registry / dotfiles** | 🚫 Never touched |
-| **Admin / root rights** | 🚫 Never required |
-| **Global installs** | 🚫 Never performed |
-| **OpenOCD location** | ✅ Only ever from `easy_flash/openocd/` |
-| **Working directory** | ✅ Always runs from `easy_flash/` folder |
+| What we don't touch | |
+|-------------------|---|
+| System `PATH` | 🚫 Never modified |
+| Registry / dotfiles | 🚫 Never modified |
+| Admin / root rights | 🚫 Never required |
+| Global installs | 🚫 Never performed |
+| OpenOCD location | ✅ Only `easy_flash/openocd/<os>/` |
+| Working directory | ✅ Always runs from `easy_flash/` |
 
 ---
 
 ## ❓ Manual OpenOCD Install
 
-If the auto-download fails, you can do it by hand:
+If the auto-download fails:
 
-1. Download the **xPack OpenOCD** build for **your OS**:  
+1. Download the **xPack OpenOCD** build for your OS:  
    <https://github.com/xpack-dev-tools/openocd-xpack/releases>
 
-2. Extract the archive
-
-3. Copy files into `easy_flash/openocd/`:
+2. Extract → copy into the right subfolder:
 
    ```
-   From the zip/tar.gz                     →  easy_flash/openocd/<os>/
-   ─────────────────────────────────────────────────────────────────
-   Windows: bin/openocd.exe + bin/*.dll     →  openocd/windows/
-   Windows: openocd/scripts/                →  openocd/windows/scripts/
+   Download                  →  easy_flash/openocd/<os>/
+   ──────────────────────────────────────────────────────
+   Windows: bin/openocd.exe + DLLs  →  openocd/windows/
+   Windows: openocd/scripts/        →  openocd/windows/scripts/
 
-   macOS:   bin/openocd + bin/*.dylib       →  openocd/macos/
-   macOS:   openocd/scripts/                →  openocd/macos/scripts/
+   macOS:   bin/openocd + .dylib    →  openocd/macos/
+   macOS:   openocd/scripts/        →  openocd/macos/scripts/
 
-   Linux:   bin/openocd + bin/*.so          →  openocd/linux/
-   Linux:   openocd/scripts/                →  openocd/linux/scripts/
+   Linux:   bin/openocd + .so       →  openocd/linux/
+   Linux:   openocd/scripts/        →  openocd/linux/scripts/
    ```
 
 ---
 
 ## ⚡ CLI for Developers
 
-No GUI needed? Use the Python CLI directly.
-
-### Any OS
-
 ```bash
-# Flash the default hex file
+# Flash default hex
 python flash.py
 
-# Flash a specific hex file
+# Flash a specific file
 python flash.py ../build/my-firmware.hex
 
-# Custom interface/target configs
+# Custom OpenOCD configs
 python flash.py firmware.hex --interface interface/jlink.cfg --target target/stm32f4x.cfg
-```
 
-### Per-platform launchers (fallback, no Python needed)
-
-```bash
-# Windows
-flash.bat build\2026-rov-Float-STM32.hex
-
-# macOS / Linux
-./run.sh --cli ../build/2026-rov-Float-STM32.hex
+# Platform-native fallbacks (no Python needed)
+flash.bat build\firmware.hex          # Windows
+./run.sh --cli ../build/firmware.hex  # macOS / Linux
 ```
 
 ---
 
-## 📝 Notes
+## 🤝 Contributing
 
-- OpenOCD auto-downloads once on first launch (stays inside `openocd/` folder).
+Contributions are welcome! A few guidelines:
+
+1. **Keep it zeroconf** — no new dependencies that require global installs
+2. **Keep it cross-platform** — test on Windows, macOS, Linux (or WSL)
+3. **Open an issue first** for significant changes
+4. **`pip install -r dev-requirements.txt`** if we add dev deps later
+
+See [TODO.md](TODO.md) for the roadmap.
+
+---
+
+## 📄 License
+
+Distributed under the **MIT License**. See `LICENSE` for details.
+
+---
+
+## 🙏 Acknowledgments
+
+- [xPack OpenOCD](https://github.com/xpack-dev-tools/openocd-xpack) — self-contained builds for all platforms
+- [OpenOCD](https://openocd.org/) — the amazing open-source debugging tool
+- STMicroelectronics — for the STM32 ecosystem
+
+---
+
+*Made for robotics teams, hackers, and anyone who just wants to flash a chip.*
 - ST-Link v2 (or v3) programmer must be connected via USB.
 - After flashing, the MCU is verified and reset automatically.
 - Drag-and-drop a `.hex` file onto the GUI window for quick loading.
