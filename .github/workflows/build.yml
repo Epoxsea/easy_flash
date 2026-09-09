@@ -11,10 +11,9 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  # Pulled from GHCR, published by .github/workflows/publish-builder.yml.
-  # GHCR image paths must be lowercase (github.repository_owner is lowercase
-  # for essentially all repos; hardcode it here if yours has uppercase).
-  IMAGE_NAME: ${{ github.repository_owner }}/easy-flash-builder
+  # Public builder image on GHCR. Hardcoded to the quangngonz namespace so this
+  # repo's Linux build pulls that image regardless of the repository owner.
+  IMAGE_NAME: quangngonz/easy-flash-builder
 
 jobs:
   windows:
