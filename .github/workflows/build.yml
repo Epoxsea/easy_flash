@@ -35,7 +35,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          # 3.11 + PyInstaller on macOS produces a broken .app (extension
+          # modules like _struct not found at runtime); 3.12 is fine.
+          python-version: "3.12"
           architecture: ${{ matrix.python-arch }}
       - uses: ./.github/actions/build-app
         with:
