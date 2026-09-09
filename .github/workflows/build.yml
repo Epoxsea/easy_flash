@@ -2,7 +2,7 @@ name: Build portable app
 
 on:
   push:
-    branches: [master, implement-TODOs]
+    branches: [master]
     tags: ["v*"]
   workflow_dispatch:
 
