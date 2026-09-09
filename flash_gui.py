@@ -8,6 +8,7 @@ never touches system PATH or global environment.
 
 import os
 import platform
+import queue
 import subprocess
 import threading
 import urllib.request
@@ -107,7 +108,13 @@ class FlashGUI:
         self.target_cfg = DEFAULT_TARGET_CFG
         self.is_flashing = False
 
+        # Tk/Tcl is not thread-safe: background threads must never touch
+        # widgets. They queue UI calls here; the main thread drains the queue
+        # on the event loop.
+        self._ui_queue = queue.Queue()
+
         self._build_ui()
+        self.root.after(100, self._drain_ui_queue)
         self._on_startup()
 
     # ── UI Construction ────────────────────────────────────────────────
@@ -350,7 +357,31 @@ class FlashGUI:
 
     # ── UI Actions ────────────────────────────────────────────────────
 
+    def _ui(self, fn, *args, **kwargs):
+        """Run fn(*args, **kwargs) on the Tk main thread.
+
+        Tk/Tcl is not thread-safe; worker threads must never touch widgets
+        directly. Off the main thread we enqueue the call and let the event
+        loop's _drain_ui_queue apply it.
+        """
+        if threading.current_thread() is threading.main_thread():
+            fn(*args, **kwargs)
+        else:
+            self._ui_queue.put((fn, args, kwargs))
+
+    def _drain_ui_queue(self):
+        try:
+            while True:
+                fn, args, kwargs = self._ui_queue.get_nowait()
+                fn(*args, **kwargs)
+        except queue.Empty:
+            pass
+        self.root.after(100, self._drain_ui_queue)
+
     def _log(self, text, tag=None):
+        self._ui(self._log_impl, text, tag)
+
+    def _log_impl(self, text, tag=None):
         self.output.configure(state="normal")
         if tag:
             self.output.insert("end", text + "\n", tag)
@@ -361,6 +392,9 @@ class FlashGUI:
         self.root.update_idletasks()
 
     def _set_status(self, text, color="gray"):
+        self._ui(self._set_status_impl, text, color)
+
+    def _set_status_impl(self, text, color="gray"):
         self.status_label.configure(text=text, fg=color)
 
     def _browse_hex(self):
@@ -427,19 +461,22 @@ class FlashGUI:
         self._log("=" * 44, "blue")
         self._log("")
 
+        # Capture config on the main thread — Tk StringVar.get() is not
+        # thread-safe and must not be called from the worker.
+        int_cfg = self.int_var.get()
+        tgt_cfg = self.tgt_var.get()
+
         # Run flash in background thread
         thread = threading.Thread(
-            target=self._run_flash, args=(hex_path, openocd), daemon=True
+            target=self._run_flash,
+            args=(hex_path, openocd, int_cfg, tgt_cfg),
+            daemon=True,
         )
         thread.start()
 
-    def _run_flash(self, hex_path, openocd):
+    def _run_flash(self, hex_path, openocd, int_cfg, tgt_cfg):
         hex_forward = hex_path.replace("\\", "/")
         tcl_cmd = f"program {hex_forward} verify reset exit"
-
-        # Read current config from UI
-        int_cfg = self.int_var.get()
-        tgt_cfg = self.tgt_var.get()
 
         args = []
         scripts_dir = get_scripts_dir(openocd)
@@ -475,10 +512,8 @@ class FlashGUI:
                 self._log("=" * 44, "green")
                 self._log(" >>> Flash completed successfully! <<<", "green")
                 self._log("=" * 44, "green")
-                self.root.after(
-                    0, self._set_status, "Ready - Last flash: SUCCESS", "green"
-                )
-                self.root.after(0, self.flash_btn.configure, {"bg": "#90ee90"})
+                self._set_status("Ready - Last flash: SUCCESS", "green")
+                self._ui(self.flash_btn.configure, bg="#90ee90")
             else:
                 self._log("=" * 44, "red")
                 self._log(
@@ -550,22 +585,20 @@ class FlashGUI:
                         "       or incompatible with this system. Try reinstalling.",
                         "orange",
                     )
-                self.root.after(
-                    0, self._set_status, "Ready - Last flash: FAILED", "red"
-                )
+                self._set_status("Ready - Last flash: FAILED", "red")
         except FileNotFoundError:
             self._log(f"[ERROR] OpenOCD binary not found at: {openocd}", "red")
             self._log(
                 "[HINT] Click 'Install OpenOCD' to download the correct version.",
                 "orange",
             )
-            self.root.after(0, self._set_status, "Error - OpenOCD not found", "red")
+            self._set_status("Error - OpenOCD not found", "red")
         except Exception as e:
             self._log(f"[ERROR] {e}", "red")
-            self.root.after(0, self._set_status, f"Error - {e}", "red")
+            self._set_status(f"Error - {e}", "red")
         finally:
             self.is_flashing = False
-            self.root.after(0, self.flash_btn.configure, {"state": "normal"})
+            self._ui(self.flash_btn.configure, state="normal")
 
     # ── OpenOCD Install ──────────────────────────────────────────────
 
@@ -600,21 +633,16 @@ class FlashGUI:
 
             # Download
             self._log("[INFO] Downloading OpenOCD...", "green")
-            self.root.after(0, self._set_status, "Downloading OpenOCD...", "orange")
+            self._set_status("Downloading OpenOCD...", "orange")
 
             def dl_progress(count, block_size, total_size):
                 if total_size > 0:
                     percent = min(100, int(count * block_size * 100 / total_size))
-                    self.root.after(
-                        0,
-                        self._set_status,
-                        f"Downloading OpenOCD... {percent}%",
-                        "orange",
-                    )
+                    self._set_status(f"Downloading OpenOCD... {percent}%", "orange")
 
             urllib.request.urlretrieve(url, OPENOCD_ARCHIVE, dl_progress)
             self._log("[INFO] Download complete!", "green")
-            self.root.after(0, self._set_status, "Extracting OpenOCD...", "orange")
+            self._set_status("Extracting OpenOCD...", "orange")
 
             # Extract
             self._log("[INFO] Extracting...", "green")
@@ -681,7 +709,7 @@ class FlashGUI:
                 self._log("=" * 44, "green")
                 self._log("")
                 self._log(f"  location: {OPENOCD_OS_DIR}", "green")
-                self.root.after(0, self._set_status, "Ready (bundled OpenOCD)", "green")
+                self._set_status("Ready (bundled OpenOCD)", "green")
             else:
                 self._log("[WARN] openocd not found after extraction", "orange")
                 self._log(
@@ -696,11 +724,9 @@ class FlashGUI:
                 "orange",
             )
             self._log(f"[HINT] Extract and copy files into: {OPENOCD_DIR}", "orange")
-            self.root.after(
-                0, self._set_status, "OpenOCD download failed - see log", "red"
-            )
+            self._set_status("OpenOCD download failed - see log", "red")
         finally:
-            self.root.after(0, self.install_btn.configure, {"state": "normal"})
+            self._ui(self.install_btn.configure, state="normal")
 
     # ── Startup ──────────────────────────────────────────────────────
 
@@ -732,10 +758,8 @@ class FlashGUI:
                 "       Make sure 'openocd' (or openocd.exe) and 'scripts/' folder exist.",
                 "orange",
             )
-            self.root.after(
-                0, self._set_status, "OpenOCD download failed - see log", "red"
-            )
-        self.root.after(0, self.install_btn.configure, {"state": "normal"})
+            self._set_status("OpenOCD download failed - see log", "red")
+        self._ui(self.install_btn.configure, state="normal")
 
     # ── Launch ───────────────────────────────────────────────────────
 
