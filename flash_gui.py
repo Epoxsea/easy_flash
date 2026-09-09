@@ -11,8 +11,6 @@ import queue
 import subprocess
 import sys
 import threading
-import tkinter as tk
-from tkinter import filedialog, messagebox, scrolledtext
 
 from openocd_bundle import (
     bundle_dir,
@@ -20,6 +18,22 @@ from openocd_bundle import (
     get_scripts_dir,
     install_openocd,
 )
+
+# The macOS standalone is frozen with python-build-standalone, which links
+# Tcl/Tk statically into libpython with a TCL_LIBRARY baked in at build time
+# (/tools/deps/lib/tcl8.6 on the build machine). PyInstaller bundles the real
+# Tcl/Tk data under <bundle>/_tcl_data and <bundle>/_tk_data, so point Tcl at
+# them before importing tkinter — otherwise tk.Tk() fails with "Can't find a
+# usable init.tcl". Idempotent: only set when the directories actually exist.
+if getattr(sys, "frozen", False):
+    _bundle = bundle_dir()
+    for _var, _sub in (("TCL_LIBRARY", "_tcl_data"), ("TK_LIBRARY", "_tk_data")):
+        _path = os.path.join(_bundle, _sub)
+        if os.path.isdir(_path):
+            os.environ.setdefault(_var, _path)
+
+import tkinter as tk
+from tkinter import filedialog, messagebox, scrolledtext
 
 # Default OpenOCD configs (relative paths for bundled scripts/)
 DEFAULT_INTERFACE_CFG = "interface/stlink.cfg"
