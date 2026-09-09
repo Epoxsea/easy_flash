@@ -16,6 +16,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # binutils       -> objdump/ldd used by PyInstaller's binary analysis
 # python3-tk     -> tkinter (bundled into the app)
 # python-is-python3 -> the `python` shim the build scripts invoke
+# libpython3.10  -> libpython3.10.so.1.0 shared lib PyInstaller bundles
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git \
         binutils \
@@ -23,6 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3-pip \
         python3-tk \
         python-is-python3 \
+        libpython3.10 \
     && rm -rf /var/lib/apt/lists/*
 
 # Single source of truth for the PyInstaller pin.
