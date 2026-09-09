@@ -9,12 +9,6 @@ on:
 permissions:
   contents: write
 
-env:
-  REGISTRY: ghcr.io
-  # Public builder image on GHCR. Hardcoded to the quangngonz namespace so this
-  # repo's Linux build pulls that image regardless of the repository owner.
-  IMAGE_NAME: quangngonz/easy-flash-builder
-
 jobs:
   windows:
     runs-on: windows-latest
@@ -50,8 +44,10 @@ jobs:
 
   linux:
     runs-on: ubuntu-latest
+    # `env` context is not available inside `container.image`, so the full
+    # reference is hardcoded to the public quangngonz builder image.
     container:
-      image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+      image: ghcr.io/quangngonz/easy-flash-builder:latest
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/build-app
