@@ -23,7 +23,14 @@ jobs:
           arch: x64
 
   macos:
-    runs-on: macos-latest
+    strategy:
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-14
+          - arch: x64
+            runner: macos-13
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       # PyInstaller cannot freeze the python.org *framework* build that
@@ -47,7 +54,7 @@ jobs:
       - uses: ./.github/actions/build-app
         with:
           os: macos
-          arch: arm64
+          arch: ${{ matrix.arch }}
 
   linux:
     runs-on: ubuntu-latest
