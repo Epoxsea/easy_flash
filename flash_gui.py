@@ -7,82 +7,31 @@ never touches system PATH or global environment.
 """
 
 import os
-import platform
 import queue
 import subprocess
+import sys
 import threading
-import urllib.request
-import zipfile
-import shutil
-import tarfile
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext
 
-# ── Paths ──────────────────────────────────────────────────────────────────
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
-OPENOCD_DIR = os.path.join(SCRIPT_DIR, "openocd")
-OPENOCD_ARCHIVE = os.path.join(SCRIPT_DIR, "openocd.zip")
+from openocd_bundle import (
+    bundle_dir,
+    get_openocd_path,
+    get_scripts_dir,
+    install_openocd,
+)
 
 # Default OpenOCD configs (relative paths for bundled scripts/)
 DEFAULT_INTERFACE_CFG = "interface/stlink.cfg"
 DEFAULT_TARGET_CFG = "target/stm32f1x.cfg"
 
-# OpenOCD download info (xPack build)
-OPENOCD_VERSION = "0.12.0-7"
-OPENOCD_BASE_URL = (
-    "https://github.com/xpack-dev-tools/openocd-xpack/releases/download/"
-    f"v{OPENOCD_VERSION}/"
+# App install dir (where openocd/ lives). Frozen PyInstaller apps resolve to
+# the executable's directory (or the .app bundle's Resources); source runs
+# use this file's directory.
+SCRIPT_DIR = bundle_dir()
+PROJECT_DIR = SCRIPT_DIR if getattr(sys, "frozen", False) else os.path.abspath(
+    os.path.join(SCRIPT_DIR, "..")
 )
-
-SYSTEM = platform.system()
-MACHINE = platform.machine().lower()
-EXE_NAME = "openocd.exe" if SYSTEM == "Windows" else "openocd"
-
-# OS subfolder inside openocd/ (e.g. openocd/windows/, openocd/macos/, openocd/linux/)
-OS_FOLDER = {"Windows": "windows", "Darwin": "macos", "Linux": "linux"}
-OPENOCD_OS_DIR = os.path.join(SCRIPT_DIR, "openocd", OS_FOLDER.get(SYSTEM, "linux"))
-
-
-# ── Helpers ────────────────────────────────────────────────────────────────
-
-
-def get_openocd_path() -> str | None:
-    """Return path to bundled OpenOCD (local only, never system PATH)."""
-    bundled = os.path.join(OPENOCD_OS_DIR, EXE_NAME)
-    return bundled if os.path.isfile(bundled) else None
-
-
-def get_scripts_dir(openocd_path: str) -> str | None:
-    """Derive scripts directory from bundled OpenOCD location."""
-    base = os.path.dirname(openocd_path)
-    for candidate in [
-        os.path.join(base, "scripts"),
-        os.path.join(base, "share", "openocd", "scripts"),
-    ]:
-        if os.path.isdir(candidate):
-            return candidate
-    return None
-
-
-def get_openocd_download_url() -> str:
-    """Get the xPack OpenOCD download URL for the current platform.
-
-    xPack publishes arm64 and x64 builds for macOS and Linux, but only an
-    x64 build for Windows ("win32" refers to the Windows API, not the arch).
-    """
-    os_tag = {"Windows": "win32", "Darwin": "darwin", "Linux": "linux"}.get(
-        SYSTEM, "linux"
-    )
-
-    if SYSTEM == "Windows":
-        arch = "x64"
-        ext = "zip"
-    else:
-        arch = "arm64" if MACHINE in ("arm64", "aarch64") else "x64"
-        ext = "tar.gz"
-
-    return f"{OPENOCD_BASE_URL}xpack-openocd-{OPENOCD_VERSION}-{os_tag}-{arch}.{ext}"
 
 
 # ── GUI Application ────────────────────────────────────────────────────────
@@ -623,114 +572,26 @@ class FlashGUI:
 
     def _run_install(self):
         try:
-            url = get_openocd_download_url()
-            self._log(f"[INFO] Platform: {SYSTEM}", "cyan")
-            self._log(f"[INFO] Download URL: {url}", "cyan")
-            self._log("")
-
-            # Clean existing, ensure parent openocd/ exists
-            openocd_parent = os.path.dirname(OPENOCD_OS_DIR)
-            if os.path.isdir(OPENOCD_OS_DIR):
-                shutil.rmtree(OPENOCD_OS_DIR)
-            os.makedirs(OPENOCD_OS_DIR, exist_ok=True)
-
-            # Download
-            self._log("[INFO] Downloading OpenOCD...", "green")
-            self._set_status("Downloading OpenOCD...", "orange")
-
-            def dl_progress(count, block_size, total_size):
-                if total_size > 0:
-                    percent = min(100, int(count * block_size * 100 / total_size))
-                    self._set_status(f"Downloading OpenOCD... {percent}%", "orange")
-
-            urllib.request.urlretrieve(url, OPENOCD_ARCHIVE, dl_progress)
-            self._log("[INFO] Download complete!", "green")
-            self._set_status("Extracting OpenOCD...", "orange")
-
-            # Extract
-            self._log("[INFO] Extracting...", "green")
-            extract_temp = os.path.join(SCRIPT_DIR, "openocd_temp")
-            if os.path.isdir(extract_temp):
-                shutil.rmtree(extract_temp)
-            os.makedirs(extract_temp, exist_ok=True)
-
-            if url.endswith(".zip"):
-                with zipfile.ZipFile(OPENOCD_ARCHIVE, "r") as zf:
-                    zf.extractall(extract_temp)
-            elif url.endswith(".tar.gz"):
-                with tarfile.open(OPENOCD_ARCHIVE, "r:gz") as tf:
-                    tf.extractall(extract_temp)
-
-            self._log("[OK] Extraction complete", "green")
-            os.remove(OPENOCD_ARCHIVE)
-
-            # Find the xPack root and move files
-            items = os.listdir(extract_temp)
-            xpack_root = extract_temp
-            if len(items) == 1 and os.path.isdir(os.path.join(extract_temp, items[0])):
-                xpack_root = os.path.join(extract_temp, items[0])
-
-            # Find bin/ directory
-            bin_dir = os.path.join(xpack_root, "bin")
-            if not os.path.isdir(bin_dir):
-                # Search recursively
-                for root, dirs, files in os.walk(xpack_root):
-                    if EXE_NAME in files:
-                        bin_dir = root
-                        xpack_root = os.path.dirname(root)
-                        break
-
-            # Copy executable and DLLs/SOs
-            if os.path.isdir(bin_dir):
-                for item in os.listdir(bin_dir):
-                    src = os.path.join(bin_dir, item)
-                    dst = os.path.join(OPENOCD_OS_DIR, item)
-                    if os.path.isfile(src):
-                        shutil.copy2(src, dst)
-                self._log(f"[OK] {EXE_NAME} + libraries copied", "green")
-
-            # Copy shared libraries for macOS/Linux builds. The xPack binary
-            # resolves its libs via @loader_path/../libexec (i.e. one level up
-            # from the binary), so they must land in openocd/libexec/, not in
-            # the OS subfolder. Windows ships its DLLs directly in bin/.
-            libexec_dir = os.path.join(xpack_root, "libexec")
-            if os.path.isdir(libexec_dir):
-                dst_libexec = os.path.join(OPENOCD_DIR, "libexec")
-                if os.path.isdir(dst_libexec):
-                    shutil.rmtree(dst_libexec)
-                shutil.copytree(libexec_dir, dst_libexec)
-                self._log("[OK] Shared libraries copied (libexec/)", "green")
-
-            # Copy scripts
-            scripts_src = os.path.join(xpack_root, "openocd", "scripts")
-            if not os.path.isdir(scripts_src):
-                # Also check directly under xpack_root
-                scripts_src = os.path.join(xpack_root, "scripts")
-            if os.path.isdir(scripts_src):
-                dst_scripts = os.path.join(OPENOCD_OS_DIR, "scripts")
-                shutil.copytree(scripts_src, dst_scripts)
-                self._log("[OK] Scripts copied (interface/, target/, etc.)", "green")
-
-            # Cleanup
-            shutil.rmtree(extract_temp, ignore_errors=True)
-            if os.path.isfile(OPENOCD_ARCHIVE):
-                os.remove(OPENOCD_ARCHIVE)
-
-            # Verify
-            if get_openocd_path():
+            result = install_openocd(
+                bundle=SCRIPT_DIR,
+                log=self._log,
+                set_status=self._set_status,
+                progress=self._dl_progress,
+            )
+            if result:
                 self._log("")
                 self._log("=" * 44, "green")
                 self._log(" OpenOCD installed successfully!", "green")
                 self._log("=" * 44, "green")
                 self._log("")
-                self._log(f"  location: {OPENOCD_OS_DIR}", "green")
+                self._log(f"  location: {os.path.dirname(result)}", "green")
                 self._set_status("Ready (bundled OpenOCD)", "green")
             else:
                 self._log("[WARN] openocd not found after extraction", "orange")
                 self._log(
-                    f"[HINT] Manually copy openocd into: {OPENOCD_OS_DIR}", "orange"
+                    f"[HINT] Manually copy openocd into: {SCRIPT_DIR}/openocd/",
+                    "orange",
                 )
-
         except Exception as e:
             self._log(f"[ERROR] Download/install failed: {e}", "red")
             self._log("[HINT] Manually download OpenOCD (xPack build) from:", "orange")
@@ -738,10 +599,17 @@ class FlashGUI:
                 "       https://github.com/xpack-dev-tools/openocd-xpack/releases",
                 "orange",
             )
-            self._log(f"[HINT] Extract and copy files into: {OPENOCD_DIR}", "orange")
+            self._log(
+                f"[HINT] Extract and copy files into: {SCRIPT_DIR}/openocd/", "orange"
+            )
             self._set_status("OpenOCD download failed - see log", "red")
         finally:
             self._ui(self.install_btn.configure, state="normal")
+
+    def _dl_progress(self, count, block_size, total_size):
+        if total_size > 0:
+            percent = min(100, int(count * block_size * 100 / total_size))
+            self._set_status(f"Downloading OpenOCD... {percent}%", "orange")
 
     # ── Startup ──────────────────────────────────────────────────────
 
@@ -768,7 +636,10 @@ class FlashGUI:
                 "       Download: https://github.com/xpack-dev-tools/openocd-xpack/releases",
                 "orange",
             )
-            self._log(f"       Extract and copy into: {OPENOCD_OS_DIR}", "orange")
+            self._log(
+                f"       Extract and copy into: {os.path.join(SCRIPT_DIR, 'openocd')}",
+                "orange",
+            )
             self._log(
                 "       Make sure 'openocd' (or openocd.exe) and 'scripts/' folder exist.",
                 "orange",

@@ -1,0 +1,74 @@
+name: Build portable app
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  REGISTRY: ghcr.io
+  # Pulled from GHCR, published by .github/workflows/publish-builder.yml.
+  # GHCR image paths must be lowercase (github.repository_owner is lowercase
+  # for essentially all repos; hardcode it here if yours has uppercase).
+  IMAGE_NAME: ${{ github.repository_owner }}/easy-flash-builder
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: ./.github/actions/build-app
+        with:
+          os: windows
+          arch: x64
+
+  macos:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        include:
+          - arch: arm64
+            python-arch: arm64
+          - arch: x64
+            python-arch: x64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          architecture: ${{ matrix.python-arch }}
+      - uses: ./.github/actions/build-app
+        with:
+          os: macos
+          arch: ${{ matrix.arch }}
+
+  linux:
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/build-app
+        with:
+          os: linux
+          arch: x64
+
+  release:
+    needs: [windows, macos, linux]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*.zip

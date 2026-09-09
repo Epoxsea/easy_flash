@@ -9,40 +9,15 @@ import sys
 import os
 import subprocess
 import argparse
-import platform
+
+from openocd_bundle import bundle_dir, get_openocd_path, get_scripts_dir
 
 # ── Paths ──────────────────────────────────────────────────────────────────
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
+SCRIPT_DIR = bundle_dir()
+PROJECT_DIR = SCRIPT_DIR if getattr(sys, "frozen", False) else os.path.abspath(
+    os.path.join(SCRIPT_DIR, "..")
+)
 DEFAULT_HEX = os.path.join(PROJECT_DIR, "build", "2026-rov-Float-STM32.hex")
-SYSTEM = platform.system()
-EXE_NAME = "openocd.exe" if SYSTEM == "Windows" else "openocd"
-
-# OS subfolder inside openocd/ (e.g. openocd/windows/, openocd/macos/, openocd/linux/)
-OS_FOLDER = {"Windows": "windows", "Darwin": "macos", "Linux": "linux"}
-OPENOCD_DIR = os.path.join(SCRIPT_DIR, "openocd", OS_FOLDER.get(SYSTEM, "linux"))
-
-
-def get_openocd_path() -> str | None:
-    """Return path to bundled OpenOCD (local only, never touches system PATH)."""
-    bundled = os.path.join(OPENOCD_DIR, EXE_NAME)
-    if os.path.isfile(bundled):
-        return bundled
-    return None
-
-
-def get_scripts_dir(openocd_path: str) -> str | None:
-    """Derive the OpenOCD scripts directory from the binary location."""
-    base = os.path.dirname(openocd_path)
-    # xPack layout: <base>/scripts/
-    scripts = os.path.join(base, "scripts")
-    if os.path.isdir(scripts):
-        return scripts
-    # Standard layout: <base>/share/openocd/scripts/
-    scripts = os.path.join(base, "share", "openocd", "scripts")
-    if os.path.isdir(scripts):
-        return scripts
-    return None
 
 
 def flash(

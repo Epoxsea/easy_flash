@@ -1,0 +1,30 @@
+name: Build standalone app
+description: Build the PyInstaller app, bundle OpenOCD, and upload the zip artifact
+
+inputs:
+  os:
+    description: Target OS (windows, macos, linux)
+    required: true
+  arch:
+    description: Target architecture (x64, arm64)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Install build dependencies
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install -r packaging/requirements-build.txt
+
+    - name: Build and bundle OpenOCD
+      shell: bash
+      run: python packaging/build.py --os "${{ inputs.os }}" --arch "${{ inputs.arch }}"
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: easy_flash-${{ inputs.os }}-${{ inputs.arch }}
+        path: dist/*.zip
+        if-no-files-found: error
