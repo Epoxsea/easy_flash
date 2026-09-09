@@ -73,8 +73,9 @@ easy_flash/
 │
 └── openocd/                 ⏳ auto-created
     ├── windows/              openocd.exe + DLLs + scripts/
-    ├── macos/                openocd + .dylib + scripts/
-    └── linux/                openocd + .so + scripts/
+    ├── macos/                openocd + scripts/
+    ├── linux/                openocd + scripts/
+    └── libexec/              macOS .dylib / Linux .so (shared libs)
 ```
 
 ---
@@ -145,10 +146,12 @@ If the auto-download fails:
    Windows: bin/openocd.exe + DLLs  →  openocd/windows/
    Windows: openocd/scripts/        →  openocd/windows/scripts/
 
-   macOS:   bin/openocd + .dylib    →  openocd/macos/
+   macOS:   bin/openocd             →  openocd/macos/
+   macOS:   libexec/                →  openocd/libexec/
    macOS:   openocd/scripts/        →  openocd/macos/scripts/
 
-   Linux:   bin/openocd + .so       →  openocd/linux/
+   Linux:   bin/openocd             →  openocd/linux/
+   Linux:   libexec/                →  openocd/libexec/
    Linux:   openocd/scripts/        →  openocd/linux/scripts/
    ```
 

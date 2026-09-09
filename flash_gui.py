@@ -28,23 +28,15 @@ OPENOCD_ARCHIVE = os.path.join(SCRIPT_DIR, "openocd.zip")
 DEFAULT_INTERFACE_CFG = "interface/stlink.cfg"
 DEFAULT_TARGET_CFG = "target/stm32f1x.cfg"
 
-# OpenOCD download URLs per platform
-OPENOCD_URLS = {
-    "Windows": (
-        "https://github.com/xpack-dev-tools/openocd-xpack/releases/download/v0.12.0-1/"
-        "xpack-openocd-0.12.0-1-win32-x64.zip"
-    ),
-    "Darwin": (  # macOS
-        "https://github.com/xpack-dev-tools/openocd-xpack/releases/download/v0.12.0-1/"
-        "xpack-openocd-0.12.0-1-darwin-x64.zip"
-    ),
-    "Linux": (
-        "https://github.com/xpack-dev-tools/openocd-xpack/releases/download/v0.12.0-1/"
-        "xpack-openocd-0.12.0-1-linux-x64.tar.gz"
-    ),
-}
+# OpenOCD download info (xPack build)
+OPENOCD_VERSION = "0.12.0-7"
+OPENOCD_BASE_URL = (
+    "https://github.com/xpack-dev-tools/openocd-xpack/releases/download/"
+    f"v{OPENOCD_VERSION}/"
+)
 
 SYSTEM = platform.system()
+MACHINE = platform.machine().lower()
 EXE_NAME = "openocd.exe" if SYSTEM == "Windows" else "openocd"
 
 # OS subfolder inside openocd/ (e.g. openocd/windows/, openocd/macos/, openocd/linux/)
@@ -74,12 +66,23 @@ def get_scripts_dir(openocd_path: str) -> str | None:
 
 
 def get_openocd_download_url() -> str:
-    """Get the appropriate OpenOCD download URL for the current platform."""
-    platform_key = SYSTEM
-    if platform_key not in OPENOCD_URLS:
-        # Fallback: try Linux URL as generic
-        platform_key = "Linux"
-    return OPENOCD_URLS[platform_key]
+    """Get the xPack OpenOCD download URL for the current platform.
+
+    xPack publishes arm64 and x64 builds for macOS and Linux, but only an
+    x64 build for Windows ("win32" refers to the Windows API, not the arch).
+    """
+    os_tag = {"Windows": "win32", "Darwin": "darwin", "Linux": "linux"}.get(
+        SYSTEM, "linux"
+    )
+
+    if SYSTEM == "Windows":
+        arch = "x64"
+        ext = "zip"
+    else:
+        arch = "arm64" if MACHINE in ("arm64", "aarch64") else "x64"
+        ext = "tar.gz"
+
+    return f"{OPENOCD_BASE_URL}xpack-openocd-{OPENOCD_VERSION}-{os_tag}-{arch}.{ext}"
 
 
 # ── GUI Application ────────────────────────────────────────────────────────
@@ -685,6 +688,18 @@ class FlashGUI:
                     if os.path.isfile(src):
                         shutil.copy2(src, dst)
                 self._log(f"[OK] {EXE_NAME} + libraries copied", "green")
+
+            # Copy shared libraries for macOS/Linux builds. The xPack binary
+            # resolves its libs via @loader_path/../libexec (i.e. one level up
+            # from the binary), so they must land in openocd/libexec/, not in
+            # the OS subfolder. Windows ships its DLLs directly in bin/.
+            libexec_dir = os.path.join(xpack_root, "libexec")
+            if os.path.isdir(libexec_dir):
+                dst_libexec = os.path.join(OPENOCD_DIR, "libexec")
+                if os.path.isdir(dst_libexec):
+                    shutil.rmtree(dst_libexec)
+                shutil.copytree(libexec_dir, dst_libexec)
+                self._log("[OK] Shared libraries copied (libexec/)", "green")
 
             # Copy scripts
             scripts_src = os.path.join(xpack_root, "openocd", "scripts")

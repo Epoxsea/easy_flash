@@ -213,8 +213,8 @@ function Get-LatestOpenOcdUrl {
         Uses the xPack build (self-contained, no extra DLLs needed).
     #>
     Write-Log "[INFO] OpenOCD download URL: xPack build (self-contained)" "DarkCyan"
-    # xPack OpenOCD v0.12.0 - self-contained Windows 64-bit build
-    return "https://github.com/xpack-dev-tools/openocd-xpack/releases/download/v0.12.0-1/xpack-openocd-0.12.0-1-win32-x64.zip"
+    # xPack OpenOCD v0.12.0-7 - self-contained Windows 64-bit build
+    return "https://github.com/xpack-dev-tools/openocd-xpack/releases/download/v0.12.0-7/xpack-openocd-0.12.0-7-win32-x64.zip"
 }
 
 function Install-BundledOpenOcd {
