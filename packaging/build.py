@@ -103,7 +103,33 @@ def main():
     with open(os.path.join(app_dir, "README.txt"), "w") as f:
         f.write(README.format(exe=exe))
 
-    # 5. Zip for distribution.
+    # 5. Fix macOS ad-hoc signature seal
+    # PyInstaller ad-hoc signs the app, but copying OpenOCD into Contents/Resources
+    # invalidates the CodeResources seal. This causes Gatekeeper to report the app
+    # as "damaged" (blocking the "Open Anyway" button). Re-signing the bundle
+    # restores the seal so it just reports "unidentified developer", which allows
+    # opening via System Settings.
+    if args.os_name == "macos" and shutil.which("codesign"):
+        app_root = os.path.join(dist, APP_NAME + ".app")
+        print("Repairing macOS code signature seal...")
+        
+        # Sign OpenOCD Mach-O binaries first (they were added after PyInstaller)
+        for root, _, files in os.walk(os.path.join(app_dir, "openocd")):
+            for name in files:
+                full = os.path.join(root, name)
+                # Fast check for Mach-O magic number (CFFAEDFE / CEFAEDFE / CAFEBABE)
+                try:
+                    with open(full, 'rb') as f:
+                        head = f.read(4)
+                    if head in (b'\xcf\xfa\xed\xfe', b'\xce\xfa\xed\xfe', b'\xca\xfe\xba\xbe'):
+                        run(["codesign", "--force", "--sign", "-", full], ROOT)
+                except Exception:
+                    pass
+                    
+        # Finally, re-sign the entire app bundle to update the seal
+        run(["codesign", "--force", "--sign", "-", app_root], ROOT)
+
+    # 6. Zip for distribution.
     zip_path = os.path.join(dist, f"{APP_NAME}-{args.os_name}-{args.arch}.zip")
     if args.os_name == "macos":
         app_root = os.path.join(dist, APP_NAME + ".app")
