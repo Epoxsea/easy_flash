@@ -1,0 +1,76 @@
+name: Build portable app
+
+on:
+  push:
+    branches: [main, implement-TODOs]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: ./.github/actions/build-app
+        with:
+          os: windows
+          arch: x64
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      # PyInstaller cannot freeze the python.org *framework* build that
+      # actions/setup-python installs on macOS: the resulting .app is missing
+      # the python3.x/lib-dynload symlink and ships a mismatched Tcl/Tk, so it
+      # crashes on launch (_struct / init.tcl). Use a non-framework
+      # python-build-standalone Python via uv instead.
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          # 3.12.9: the last standalone build with statically-linked _tkinter.
+          # Newer (>=3.12.14) builds ship dynamic Tcl/Tk that PyInstaller 6.22
+          # cannot collect yet (pyinstaller#9204).
+          python-version: "3.12.9"
+          activate-environment: true
+        env:
+          # Force python-build-standalone (non-framework); the runner image
+          # ships a framework Python 3.12 at /usr/local/bin that uv would
+          # otherwise pick and which PyInstaller cannot freeze.
+          UV_PYTHON_PREFERENCE: only-managed
+      - run: uv pip install pip
+      - uses: ./.github/actions/build-app
+        with:
+          os: macos
+          arch: arm64
+
+  linux:
+    runs-on: ubuntu-latest
+    # `env` context is not available inside `container.image`, so the full
+    # reference is hardcoded to the public quangngonz builder image.
+    container:
+      image: ghcr.io/quangngonz/easy-flash-builder:latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/build-app
+        with:
+          os: linux
+          arch: x64
+
+  release:
+    needs: [windows, macos, linux]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*.zip
