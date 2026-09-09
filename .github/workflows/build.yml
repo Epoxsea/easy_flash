@@ -31,7 +31,7 @@ jobs:
       # the python3.x/lib-dynload symlink and ships a mismatched Tcl/Tk, so it
       # crashes on launch (_struct / init.tcl). Use a non-framework
       # python-build-standalone Python via uv instead.
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.0.1
         with:
           python-version: "3.12"
           activate-environment: true
