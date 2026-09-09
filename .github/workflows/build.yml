@@ -33,7 +33,10 @@ jobs:
       # python-build-standalone Python via uv instead.
       - uses: astral-sh/setup-uv@v10.0.1
         with:
-          python-version: "3.12"
+          # 3.12.9: the last standalone build with statically-linked _tkinter.
+          # Newer (>=3.12.14) builds ship dynamic Tcl/Tk that PyInstaller 6.22
+          # cannot collect yet (pyinstaller#9204).
+          python-version: "3.12.9"
           activate-environment: true
         env:
           # Force python-build-standalone (non-framework); the runner image
