@@ -35,6 +35,11 @@ jobs:
         with:
           python-version: "3.12"
           activate-environment: true
+        env:
+          # Force python-build-standalone (non-framework); the runner image
+          # ships a framework Python 3.12 at /usr/local/bin that uv would
+          # otherwise pick and which PyInstaller cannot freeze.
+          UV_PYTHON_PREFERENCE: only-managed
       - run: uv pip install pip
       - uses: ./.github/actions/build-app
         with:
