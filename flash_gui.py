@@ -7,78 +7,45 @@ never touches system PATH or global environment.
 """
 
 import os
-import platform
+import queue
 import subprocess
+import sys
 import threading
-import urllib.request
-import zipfile
-import shutil
-import tarfile
+
+from openocd_bundle import (
+    bundle_dir,
+    get_openocd_path,
+    get_scripts_dir,
+    install_openocd,
+)
+
+# The macOS standalone is frozen with python-build-standalone, which links
+# Tcl/Tk statically into libpython with a TCL_LIBRARY baked in at build time
+# (/tools/deps/lib/tcl8.6 on the build machine). PyInstaller bundles the real
+# Tcl/Tk data under <bundle>/_tcl_data and <bundle>/_tk_data, so point Tcl at
+# them before importing tkinter — otherwise tk.Tk() fails with "Can't find a
+# usable init.tcl". Idempotent: only set when the directories actually exist.
+if getattr(sys, "frozen", False):
+    _bundle = bundle_dir()
+    for _var, _sub in (("TCL_LIBRARY", "_tcl_data"), ("TK_LIBRARY", "_tk_data")):
+        _path = os.path.join(_bundle, _sub)
+        if os.path.isdir(_path):
+            os.environ.setdefault(_var, _path)
+
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext
-
-# ── Paths ──────────────────────────────────────────────────────────────────
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
-OPENOCD_DIR = os.path.join(SCRIPT_DIR, "openocd")
-OPENOCD_ARCHIVE = os.path.join(SCRIPT_DIR, "openocd.zip")
 
 # Default OpenOCD configs (relative paths for bundled scripts/)
 DEFAULT_INTERFACE_CFG = "interface/stlink.cfg"
 DEFAULT_TARGET_CFG = "target/stm32f1x.cfg"
 
-# OpenOCD download URLs per platform
-OPENOCD_URLS = {
-    "Windows": (
-        "https://github.com/xpack-dev-tools/openocd-xpack/releases/download/v0.12.0-1/"
-        "xpack-openocd-0.12.0-1-win32-x64.zip"
-    ),
-    "Darwin": (  # macOS
-        "https://github.com/xpack-dev-tools/openocd-xpack/releases/download/v0.12.0-1/"
-        "xpack-openocd-0.12.0-1-darwin-x64.zip"
-    ),
-    "Linux": (
-        "https://github.com/xpack-dev-tools/openocd-xpack/releases/download/v0.12.0-1/"
-        "xpack-openocd-0.12.0-1-linux-x64.tar.gz"
-    ),
-}
-
-SYSTEM = platform.system()
-EXE_NAME = "openocd.exe" if SYSTEM == "Windows" else "openocd"
-
-# OS subfolder inside openocd/ (e.g. openocd/windows/, openocd/macos/, openocd/linux/)
-OS_FOLDER = {"Windows": "windows", "Darwin": "macos", "Linux": "linux"}
-OPENOCD_OS_DIR = os.path.join(SCRIPT_DIR, "openocd", OS_FOLDER.get(SYSTEM, "linux"))
-
-
-# ── Helpers ────────────────────────────────────────────────────────────────
-
-
-def get_openocd_path() -> str | None:
-    """Return path to bundled OpenOCD (local only, never system PATH)."""
-    bundled = os.path.join(OPENOCD_OS_DIR, EXE_NAME)
-    return bundled if os.path.isfile(bundled) else None
-
-
-def get_scripts_dir(openocd_path: str) -> str | None:
-    """Derive scripts directory from bundled OpenOCD location."""
-    base = os.path.dirname(openocd_path)
-    for candidate in [
-        os.path.join(base, "scripts"),
-        os.path.join(base, "share", "openocd", "scripts"),
-    ]:
-        if os.path.isdir(candidate):
-            return candidate
-    return None
-
-
-def get_openocd_download_url() -> str:
-    """Get the appropriate OpenOCD download URL for the current platform."""
-    platform_key = SYSTEM
-    if platform_key not in OPENOCD_URLS:
-        # Fallback: try Linux URL as generic
-        platform_key = "Linux"
-    return OPENOCD_URLS[platform_key]
+# App install dir (where openocd/ lives). Frozen PyInstaller apps resolve to
+# the executable's directory (or the .app bundle's Resources); source runs
+# use this file's directory.
+SCRIPT_DIR = bundle_dir()
+PROJECT_DIR = SCRIPT_DIR if getattr(sys, "frozen", False) else os.path.abspath(
+    os.path.join(SCRIPT_DIR, "..")
+)
 
 
 # ── GUI Application ────────────────────────────────────────────────────────
@@ -107,7 +74,13 @@ class FlashGUI:
         self.target_cfg = DEFAULT_TARGET_CFG
         self.is_flashing = False
 
+        # Tk/Tcl is not thread-safe: background threads must never touch
+        # widgets. They queue UI calls here; the main thread drains the queue
+        # on the event loop.
+        self._ui_queue = queue.Queue()
+
         self._build_ui()
+        self.root.after(100, self._drain_ui_queue)
         self._on_startup()
 
     # ── UI Construction ────────────────────────────────────────────────
@@ -350,7 +323,31 @@ class FlashGUI:
 
     # ── UI Actions ────────────────────────────────────────────────────
 
+    def _ui(self, fn, *args, **kwargs):
+        """Run fn(*args, **kwargs) on the Tk main thread.
+
+        Tk/Tcl is not thread-safe; worker threads must never touch widgets
+        directly. Off the main thread we enqueue the call and let the event
+        loop's _drain_ui_queue apply it.
+        """
+        if threading.current_thread() is threading.main_thread():
+            fn(*args, **kwargs)
+        else:
+            self._ui_queue.put((fn, args, kwargs))
+
+    def _drain_ui_queue(self):
+        try:
+            while True:
+                fn, args, kwargs = self._ui_queue.get_nowait()
+                fn(*args, **kwargs)
+        except queue.Empty:
+            pass
+        self.root.after(100, self._drain_ui_queue)
+
     def _log(self, text, tag=None):
+        self._ui(self._log_impl, text, tag)
+
+    def _log_impl(self, text, tag=None):
         self.output.configure(state="normal")
         if tag:
             self.output.insert("end", text + "\n", tag)
@@ -361,6 +358,9 @@ class FlashGUI:
         self.root.update_idletasks()
 
     def _set_status(self, text, color="gray"):
+        self._ui(self._set_status_impl, text, color)
+
+    def _set_status_impl(self, text, color="gray"):
         self.status_label.configure(text=text, fg=color)
 
     def _browse_hex(self):
@@ -427,19 +427,22 @@ class FlashGUI:
         self._log("=" * 44, "blue")
         self._log("")
 
+        # Capture config on the main thread — Tk StringVar.get() is not
+        # thread-safe and must not be called from the worker.
+        int_cfg = self.int_var.get()
+        tgt_cfg = self.tgt_var.get()
+
         # Run flash in background thread
         thread = threading.Thread(
-            target=self._run_flash, args=(hex_path, openocd), daemon=True
+            target=self._run_flash,
+            args=(hex_path, openocd, int_cfg, tgt_cfg),
+            daemon=True,
         )
         thread.start()
 
-    def _run_flash(self, hex_path, openocd):
+    def _run_flash(self, hex_path, openocd, int_cfg, tgt_cfg):
         hex_forward = hex_path.replace("\\", "/")
         tcl_cmd = f"program {hex_forward} verify reset exit"
-
-        # Read current config from UI
-        int_cfg = self.int_var.get()
-        tgt_cfg = self.tgt_var.get()
 
         args = []
         scripts_dir = get_scripts_dir(openocd)
@@ -475,10 +478,8 @@ class FlashGUI:
                 self._log("=" * 44, "green")
                 self._log(" >>> Flash completed successfully! <<<", "green")
                 self._log("=" * 44, "green")
-                self.root.after(
-                    0, self._set_status, "Ready - Last flash: SUCCESS", "green"
-                )
-                self.root.after(0, self.flash_btn.configure, {"bg": "#90ee90"})
+                self._set_status("Ready - Last flash: SUCCESS", "green")
+                self._ui(self.flash_btn.configure, bg="#90ee90")
             else:
                 self._log("=" * 44, "red")
                 self._log(
@@ -550,22 +551,20 @@ class FlashGUI:
                         "       or incompatible with this system. Try reinstalling.",
                         "orange",
                     )
-                self.root.after(
-                    0, self._set_status, "Ready - Last flash: FAILED", "red"
-                )
+                self._set_status("Ready - Last flash: FAILED", "red")
         except FileNotFoundError:
             self._log(f"[ERROR] OpenOCD binary not found at: {openocd}", "red")
             self._log(
                 "[HINT] Click 'Install OpenOCD' to download the correct version.",
                 "orange",
             )
-            self.root.after(0, self._set_status, "Error - OpenOCD not found", "red")
+            self._set_status("Error - OpenOCD not found", "red")
         except Exception as e:
             self._log(f"[ERROR] {e}", "red")
-            self.root.after(0, self._set_status, f"Error - {e}", "red")
+            self._set_status(f"Error - {e}", "red")
         finally:
             self.is_flashing = False
-            self.root.after(0, self.flash_btn.configure, {"state": "normal"})
+            self._ui(self.flash_btn.configure, state="normal")
 
     # ── OpenOCD Install ──────────────────────────────────────────────
 
@@ -587,107 +586,26 @@ class FlashGUI:
 
     def _run_install(self):
         try:
-            url = get_openocd_download_url()
-            self._log(f"[INFO] Platform: {SYSTEM}", "cyan")
-            self._log(f"[INFO] Download URL: {url}", "cyan")
-            self._log("")
-
-            # Clean existing, ensure parent openocd/ exists
-            openocd_parent = os.path.dirname(OPENOCD_OS_DIR)
-            if os.path.isdir(OPENOCD_OS_DIR):
-                shutil.rmtree(OPENOCD_OS_DIR)
-            os.makedirs(OPENOCD_OS_DIR, exist_ok=True)
-
-            # Download
-            self._log("[INFO] Downloading OpenOCD...", "green")
-            self.root.after(0, self._set_status, "Downloading OpenOCD...", "orange")
-
-            def dl_progress(count, block_size, total_size):
-                if total_size > 0:
-                    percent = min(100, int(count * block_size * 100 / total_size))
-                    self.root.after(
-                        0,
-                        self._set_status,
-                        f"Downloading OpenOCD... {percent}%",
-                        "orange",
-                    )
-
-            urllib.request.urlretrieve(url, OPENOCD_ARCHIVE, dl_progress)
-            self._log("[INFO] Download complete!", "green")
-            self.root.after(0, self._set_status, "Extracting OpenOCD...", "orange")
-
-            # Extract
-            self._log("[INFO] Extracting...", "green")
-            extract_temp = os.path.join(SCRIPT_DIR, "openocd_temp")
-            if os.path.isdir(extract_temp):
-                shutil.rmtree(extract_temp)
-            os.makedirs(extract_temp, exist_ok=True)
-
-            if url.endswith(".zip"):
-                with zipfile.ZipFile(OPENOCD_ARCHIVE, "r") as zf:
-                    zf.extractall(extract_temp)
-            elif url.endswith(".tar.gz"):
-                with tarfile.open(OPENOCD_ARCHIVE, "r:gz") as tf:
-                    tf.extractall(extract_temp)
-
-            self._log("[OK] Extraction complete", "green")
-            os.remove(OPENOCD_ARCHIVE)
-
-            # Find the xPack root and move files
-            items = os.listdir(extract_temp)
-            xpack_root = extract_temp
-            if len(items) == 1 and os.path.isdir(os.path.join(extract_temp, items[0])):
-                xpack_root = os.path.join(extract_temp, items[0])
-
-            # Find bin/ directory
-            bin_dir = os.path.join(xpack_root, "bin")
-            if not os.path.isdir(bin_dir):
-                # Search recursively
-                for root, dirs, files in os.walk(xpack_root):
-                    if EXE_NAME in files:
-                        bin_dir = root
-                        xpack_root = os.path.dirname(root)
-                        break
-
-            # Copy executable and DLLs/SOs
-            if os.path.isdir(bin_dir):
-                for item in os.listdir(bin_dir):
-                    src = os.path.join(bin_dir, item)
-                    dst = os.path.join(OPENOCD_OS_DIR, item)
-                    if os.path.isfile(src):
-                        shutil.copy2(src, dst)
-                self._log(f"[OK] {EXE_NAME} + libraries copied", "green")
-
-            # Copy scripts
-            scripts_src = os.path.join(xpack_root, "openocd", "scripts")
-            if not os.path.isdir(scripts_src):
-                # Also check directly under xpack_root
-                scripts_src = os.path.join(xpack_root, "scripts")
-            if os.path.isdir(scripts_src):
-                dst_scripts = os.path.join(OPENOCD_OS_DIR, "scripts")
-                shutil.copytree(scripts_src, dst_scripts)
-                self._log("[OK] Scripts copied (interface/, target/, etc.)", "green")
-
-            # Cleanup
-            shutil.rmtree(extract_temp, ignore_errors=True)
-            if os.path.isfile(OPENOCD_ARCHIVE):
-                os.remove(OPENOCD_ARCHIVE)
-
-            # Verify
-            if get_openocd_path():
+            result = install_openocd(
+                bundle=SCRIPT_DIR,
+                log=self._log,
+                set_status=self._set_status,
+                progress=self._dl_progress,
+            )
+            if result:
                 self._log("")
                 self._log("=" * 44, "green")
                 self._log(" OpenOCD installed successfully!", "green")
                 self._log("=" * 44, "green")
                 self._log("")
-                self._log(f"  location: {OPENOCD_OS_DIR}", "green")
-                self.root.after(0, self._set_status, "Ready (bundled OpenOCD)", "green")
+                self._log(f"  location: {os.path.dirname(result)}", "green")
+                self._set_status("Ready (bundled OpenOCD)", "green")
             else:
                 self._log("[WARN] openocd not found after extraction", "orange")
                 self._log(
-                    f"[HINT] Manually copy openocd into: {OPENOCD_OS_DIR}", "orange"
+                    f"[HINT] Manually copy openocd into: {SCRIPT_DIR}/openocd/",
+                    "orange",
                 )
-
         except Exception as e:
             self._log(f"[ERROR] Download/install failed: {e}", "red")
             self._log("[HINT] Manually download OpenOCD (xPack build) from:", "orange")
@@ -695,12 +613,17 @@ class FlashGUI:
                 "       https://github.com/xpack-dev-tools/openocd-xpack/releases",
                 "orange",
             )
-            self._log(f"[HINT] Extract and copy files into: {OPENOCD_DIR}", "orange")
-            self.root.after(
-                0, self._set_status, "OpenOCD download failed - see log", "red"
+            self._log(
+                f"[HINT] Extract and copy files into: {SCRIPT_DIR}/openocd/", "orange"
             )
+            self._set_status("OpenOCD download failed - see log", "red")
         finally:
-            self.root.after(0, self.install_btn.configure, {"state": "normal"})
+            self._ui(self.install_btn.configure, state="normal")
+
+    def _dl_progress(self, count, block_size, total_size):
+        if total_size > 0:
+            percent = min(100, int(count * block_size * 100 / total_size))
+            self._set_status(f"Downloading OpenOCD... {percent}%", "orange")
 
     # ── Startup ──────────────────────────────────────────────────────
 
@@ -727,15 +650,16 @@ class FlashGUI:
                 "       Download: https://github.com/xpack-dev-tools/openocd-xpack/releases",
                 "orange",
             )
-            self._log(f"       Extract and copy into: {OPENOCD_OS_DIR}", "orange")
+            self._log(
+                f"       Extract and copy into: {os.path.join(SCRIPT_DIR, 'openocd')}",
+                "orange",
+            )
             self._log(
                 "       Make sure 'openocd' (or openocd.exe) and 'scripts/' folder exist.",
                 "orange",
             )
-            self.root.after(
-                0, self._set_status, "OpenOCD download failed - see log", "red"
-            )
-        self.root.after(0, self.install_btn.configure, {"state": "normal"})
+            self._set_status("OpenOCD download failed - see log", "red")
+        self._ui(self.install_btn.configure, state="normal")
 
     # ── Launch ───────────────────────────────────────────────────────
 

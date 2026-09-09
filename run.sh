@@ -30,7 +30,11 @@ done
 if [ -z "$PYTHON" ]; then
     echo "[ERROR] Python 3 is required but not found on your system."
     echo ""
-    echo "  Install it:"
+    echo "  This launcher is for running from source (development)."
+    echo "  End users: download the prebuilt zip for your OS from the"
+    echo "  GitHub Releases page instead - it needs no Python at all."
+    echo ""
+    echo "  Install Python 3:"
     echo ""
     echo "    macOS:  brew install python"
     echo "    Ubuntu: sudo apt install python3 python3-tk"

@@ -1,0 +1,20 @@
+# Keep the builder image's build context small.
+.git
+.github
+openocd
+image
+dist
+build
+__pycache__
+*.pyc
+*.pyo
+*.zip
+*.hex
+*.bin
+*.elf
+*.d
+*.o
+*.log
+*.gdb
+.DS_Store
+Thumbs.db

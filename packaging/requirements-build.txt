@@ -1,0 +1,3 @@
+# Build-time dependency for producing the standalone app.
+# The app itself has no third-party runtime dependencies (stdlib only).
+pyinstaller>=6.10,<7
