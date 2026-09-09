@@ -24,25 +24,22 @@ jobs:
 
   macos:
     runs-on: macos-latest
-    strategy:
-      matrix:
-        include:
-          - arch: arm64
-            python-arch: arm64
-          - arch: x64
-            python-arch: x64
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      # PyInstaller cannot freeze the python.org *framework* build that
+      # actions/setup-python installs on macOS: the resulting .app is missing
+      # the python3.x/lib-dynload symlink and ships a mismatched Tcl/Tk, so it
+      # crashes on launch (_struct / init.tcl). Use a non-framework
+      # python-build-standalone Python via uv instead.
+      - uses: astral-sh/setup-uv@v10
         with:
-          # 3.11 + PyInstaller on macOS produces a broken .app (extension
-          # modules like _struct not found at runtime); 3.12 is fine.
           python-version: "3.12"
-          architecture: ${{ matrix.python-arch }}
+          activate-environment: true
+      - run: uv pip install pip
       - uses: ./.github/actions/build-app
         with:
           os: macos
-          arch: ${{ matrix.arch }}
+          arch: arm64
 
   linux:
     runs-on: ubuntu-latest
