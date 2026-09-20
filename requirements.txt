@@ -4,6 +4,9 @@
 #   tkinter, urllib.request, zipfile, tarfile, shutil, subprocess,
 #   threading, argparse, platform, os, sys, queue
 #
+# NOTE: ttkbootstrap is required for modern UI features but is optional for basic functionality
+# pip install ttkbootstrap
+
 # Nothing needs to be installed via pip. Run:
 #   pip install -r requirements.txt   # installs nothing
 #

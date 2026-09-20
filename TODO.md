@@ -24,13 +24,22 @@
 
 ## Done ✓
 
-- [x] Cross-platform GUI (Python/tkinter)
-- [x] Cross-platform CLI (Python)
-- [x] Auto-download OpenOCD per OS
-- [x] OS-specific subfolders: `openocd/windows/`, `macos/`, `linux/`
-- [x] No PATH / no global installs
-- [x] macOS / Linux launcher (`run.sh`)
-- [x] Detailed error output (stderr capture, exit code hints)
-- [x] Detect missing shared libraries on Linux/WSL and suggest fix
-- [x] Standalone executables — no Python/tkinter install needed (PyInstaller)
-- [x] CI/CD — GitHub Actions builds + bundles OpenOCD for Windows/macOS/Linux
+- Cross-platform GUI (Python/tkinter)
+- Cross-platform CLI (Python)
+- Auto-download OpenOCD per OS
+- OS-specific subfolders: `openocd/windows/`, `macos/`, `linux/`
+- No PATH / no global installs
+- macOS / Linux launcher (`run.sh`)
+- Detailed error output (stderr capture, exit code hints)
+- Detect missing shared libraries on Linux/WSL and suggest fix
+- Standalone executables — no Python/tkinter install needed (PyInstaller)
+- CI/CD — GitHub Actions builds + bundles OpenOCD for Windows/macOS/Linux
+- Shared core refactored (`flasher.py`)
+- Fixed Tcl/Tk macOS standalone pathing bug
+- GUI uses dropdown menus with "Custom..." entries
+- Settings persist via `easyflash.json`
+- Drag-and-drop support in UI
+- Cancel flash button
+- Reinstall OpenOCD button
+- Improved CLI with `--list`, `--target`, `--interface` options
+- Updated documentation and project structure

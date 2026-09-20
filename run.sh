@@ -15,7 +15,6 @@ echo "========================================"
 echo ""
 
 # ── Find Python 3 (macOS/BSD compatible — no GNU grep needed) ──────────
-PYTHON=""
 for cmd in python3 python; do
     if command -v "$cmd" &>/dev/null; then
         ver=$("$cmd" --version 2>&1 | grep -E 'Python 3\.' || true)
@@ -25,6 +24,23 @@ for cmd in python3 python; do
         fi
     fi
 done
+
+# Try common paths and fallback to system Python (if the above failed).
+if [ -z "$PYTHON" ]; then
+    echo "[WARN] No Python 3 found in PATH, trying known locations..."
+    # Try macOS system Python first (common path)
+    if [ -x "/usr/bin/python3" ]; then
+        PYTHON="/usr/bin/python3"
+        echo "[INFO] Using system Python: $PYTHON"
+    elif [ -x "/opt/homebrew/bin/python3" ]; then
+        # Homebrew on Apple Silicon Macs
+        PYTHON="/opt/homebrew/bin/python3"
+        echo "[INFO] Using Homebrew Python: $PYTHON"
+    else
+        echo "[ERROR] No suitable Python 3 found."
+        exit 1
+    fi
+fi
 
 # ── No Python 3 at all? ────────────────────────────────────────────────
 if [ -z "$PYTHON" ]; then
