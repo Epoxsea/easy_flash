@@ -24,6 +24,7 @@ the binary — i.e. directly under openocd/, not inside the per-OS folder.
 import os
 import platform
 import shutil
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -81,6 +82,48 @@ def get_scripts_dir(openocd_path):
         if os.path.isdir(candidate):
             return candidate
     return None
+
+
+def strip_macos_quarantine(openocd_path):
+    """Remove ``com.apple.quarantine`` from the bundled OpenOCD tree (macOS).
+
+    Files that come from the internet (a release zip) carry this xattr, and
+    ad-hoc signed Mach-O binaries — like the bundled OpenOCD — refuse to
+    exec while it is present (``execve`` fails with EPERM / "Operation not
+    permitted"). The app's process owns the files and may drop the
+    attribute, so it is stripped before every spawn. No-op elsewhere.
+
+    Uses ``xattr(1)`` (always present on macOS): some Pythons — notably the
+    Apple system build — ship no ``os.*xattr`` API, so the Python-level
+    calls are only a fast path, not a requirement.
+    """
+    if sys.platform != "darwin":
+        return
+
+    # <bundle>/openocd/<os>/openocd -> strip across <bundle>/openocd
+    root = os.path.dirname(os.path.dirname(os.path.abspath(openocd_path)))
+
+    # Fast path: drop it on each file directly when the API exists.
+    if hasattr(os, "removexattr"):
+        for dirpath, _dirs, files in os.walk(root):
+            for name in files:
+                try:
+                    os.removexattr(os.path.join(dirpath, name), "com.apple.quarantine")
+                except OSError:
+                    pass  # attr absent or file not owned by us: fine
+        return
+
+    # Fallback: shell out. ``xattr -r -d`` never fails the app even if the
+    # attribute is already gone.
+    try:
+        subprocess.run(
+            ["xattr", "-r", "-d", "com.apple.quarantine", root],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        pass
 
 
 def get_openocd_download_url(system=None, machine=None):

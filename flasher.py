@@ -18,6 +18,8 @@ import os
 import re
 import subprocess
 
+from openocd_bundle import strip_macos_quarantine
+
 DEFAULT_INTERFACE = "interface/stlink.cfg"
 DEFAULT_TARGET = "target/stm32f1x.cfg"
 
@@ -190,6 +192,7 @@ def detect_programmer(openocd, interface_cfg, scripts_dir=None, log=None):
     connected for that interface config.
     """
     log = log or (lambda *_a: None)
+    strip_macos_quarantine(openocd)
     try:
         proc = _popen(build_detect_argv(openocd, interface_cfg, scripts_dir))
         out, _ = proc.communicate(timeout=30)
@@ -216,6 +219,7 @@ def flash(
     exit code.
     """
     log = log or (lambda *_a: None)
+    strip_macos_quarantine(openocd)
     argv = build_flash_argv(openocd, interface_cfg, target_cfg, hex_path, scripts_dir)
     proc = _popen(argv)
     try:

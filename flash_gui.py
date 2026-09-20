@@ -39,6 +39,7 @@ if getattr(sys, "frozen", False):
 # Try to import tkinter
 try:
     import tkinter as tk
+    from tkinter import ttk
     from tkinter import filedialog, messagebox, scrolledtext
     TK_AVAILABLE = True
 except ImportError:
@@ -99,19 +100,19 @@ class FlashGUI:
             self.interface_cfg = DEFAULT_INTERFACE_CFG
             self.target_cfg = DEFAULT_TARGET_CFG
             self.is_flashing = False
-            self.settings_file = "easyflash.json"
+            self.settings_file = os.path.join(os.path.expanduser("~"), ".easyflash.json")
             
             # UI elements queue
             self._ui_queue = queue.Queue()
             
-            # Load existing settings if available
-            self.load_settings()
-            
-            # Create the GUI elements
+            # Create the GUI elements (widgets must exist before settings load)
             if TTKBOOTSTRAP_AVAILABLE:
                 self.create_widgets_enhanced()
             else:
                 self.create_widgets_basic()
+            
+            # Load existing settings if available
+            self.load_settings()
                 
         except Exception as e:
             print(f"Error initializing GUI: {e}")
@@ -172,17 +173,18 @@ class FlashGUI:
         # Populate the dropdown with available targets from flasher module
         try:
             from flasher import list_targets
-            targets = list_targets()
-            target_labels = [label for label, _ in targets] 
-            self.target_dropdown['values'] = target_labels
-            
-            if target_labels:
-                self.target_var.set(target_labels[0])
-                self.target_cfg = targets[0][1]
+            self._target_choices = list_targets()
         except Exception as e:
             print(f"Error loading targets: {e}")
-            self.target_dropdown['values'] = ["Generic STM32F1 Board"]
-            self.target_var.set("Generic STM32F1 Board")
+            self._target_choices = [("Generic STM32F1 Board", DEFAULT_TARGET_CFG)]
+
+        target_labels = [label for label, _ in self._target_choices]
+        self.target_dropdown['values'] = target_labels
+        self.target_dropdown.bind("<<ComboboxSelected>>", self._on_target_change)
+
+        if target_labels:
+            self.target_var.set(target_labels[0])
+            self.target_cfg = self._target_choices[0][1]
         
         # Status section
         status_frame = tb.LabelFrame(main_frame, text="Status", padding=10)
@@ -282,11 +284,19 @@ class FlashGUI:
         target_label = tk.Label(target_row, text="Board:")
         target_label.pack(side="left", padx=(0, 10))
         
-        self.target_dropdown = tk.Combobox(target_row, textvariable=self.target_var, state="readonly")
+        self.target_dropdown = ttk.Combobox(target_row, textvariable=self.target_var, state="readonly")
         self.target_dropdown.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        self.target_dropdown.bind("<<ComboboxSelected>>", self._on_target_change)
         
-        self.target_dropdown['values'] = ["Generic STM32F1 Board"]
-        self.target_var.set("Generic STM32F1 Board")
+        try:
+            from flasher import list_targets
+            self._target_choices = list_targets()
+        except Exception as e:
+            print(f"Error loading targets: {e}")
+            self._target_choices = [("Generic STM32F1 Board", DEFAULT_TARGET_CFG)]
+        self.target_dropdown['values'] = [label for label, _ in self._target_choices]
+        self.target_var.set(self._target_choices[0][0])
+        self.target_cfg = self._target_choices[0][1]
         
         status_frame = tk.LabelFrame(main_frame, text="Status", padx=10, pady=10)
         status_frame.pack(fill="x", pady=(0, 15))
@@ -294,6 +304,11 @@ class FlashGUI:
         self.status_label = tk.Label(status_frame, text="Ready to flash")
         self.status_label.pack(side="left")
         
+        # Progress bar (hidden until a flash starts; mirrors the enhanced UI)
+        self.progress = ttk.Progressbar(main_frame, mode="determinate")
+        self.progress.pack(fill="x", pady=(10, 0), padx=20)
+        self.progress.pack_forget()
+
         button_frame = tk.Frame(main_frame)
         button_frame.pack(fill="x", pady=(10, 0))
         
@@ -396,7 +411,7 @@ class FlashGUI:
             
             # Try to detect ST-Link
             from flasher import detect_programmer
-            detected, lines = detect_programmer(openocd_path, self.interface_cfg)
+            detected, lines = detect_programmer(openocd_path, self.interface_cfg, get_scripts_dir(openocd_path))
             
             if not detected:
                 self.ui_queue_put(lambda: self.set_status("No ST-Link found. Please connect your programmer."))
@@ -419,7 +434,8 @@ class FlashGUI:
                 openocd_path, 
                 self.interface_cfg,
                 self.target_cfg, 
-                hex_path, 
+                hex_path,
+                scripts_dir=get_scripts_dir(openocd_path),
                 log=log_line
             )
             
@@ -461,7 +477,7 @@ class FlashGUI:
                 return
                 
             from flasher import detect_programmer
-            detected, lines = detect_programmer(openocd_path, self.interface_cfg)
+            detected, lines = detect_programmer(openocd_path, self.interface_cfg, get_scripts_dir(openocd_path))
             
             if detected:
                 self.ui_queue_put(lambda: self.set_status("ST-Link detected"))
@@ -477,6 +493,14 @@ class FlashGUI:
             messagebox.showinfo("Success", "OpenOCD reinstalled successfully!")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to reinstall OpenOCD: {str(e)}")
+
+    def _on_target_change(self, _event=None):
+        """Keep self.target_cfg in sync with the dropdown selection."""
+        label = self.target_var.get()
+        for name, cfg in self._target_choices:
+            if name == label:
+                self.target_cfg = cfg
+                break
 
     def save_settings(self):
         """Save current settings to JSON"""
@@ -532,8 +556,9 @@ class FlashGUI:
 
     def run(self):
         """Run the GUI application"""
-        if TTKBOOTSTRAP_AVAILABLE:
-            self.root.after(100, self.process_ui_queue)
+        # Worker threads push UI updates through the queue; it must be
+        # processed regardless of which widget toolkit is active.
+        self.root.after(100, self.process_ui_queue)
         
         try:
             self.root.mainloop()
@@ -542,6 +567,9 @@ class FlashGUI:
 
     def run_text_interface(self):
         """Fallback to text-based interface"""
+        if sys.stdin is None or not sys.stdin.isatty():
+            print("No interactive console available - see ~/.easyflash.log.")
+            sys.exit(1)
         print("Starting STM32 EASY FLASH (Text Interface)")
         print("Please use command-line interface or install tkinter for GUI support")
 
@@ -572,6 +600,20 @@ class FlashGUI:
 # ── Entry Point ────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    # Windowed (frozen) builds have no console; route all output to a log
+    # file so a startup failure is diagnosable instead of silent.
+    if getattr(sys, "frozen", False):
+        try:
+            _log_file = open(
+                os.path.join(os.path.expanduser("~"), "easyflash.log"),
+                "a",
+                buffering=1,
+            )
+            sys.stdout = _log_file
+            sys.stderr = _log_file
+        except Exception:
+            pass
+
     try:
         app = FlashGUI()
         app.run()
