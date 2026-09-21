@@ -151,9 +151,14 @@ class FlashGUI:
         
         self.hex_entry = tb.Entry(hex_row, textvariable=self.hex_var)
         self.hex_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        self.hex_entry.bind("<Command-v>", self._paste_hex, add="+")
+        self.hex_entry.bind("<Control-v>", self._paste_hex, add="+")
         
         hex_btn = tb.Button(hex_row, text="Browse...", command=self.select_hex_file)
         hex_btn.pack(side="right")
+
+        paste_btn = tb.Button(hex_row, text="Paste", command=self._paste_hex, bootstyle="secondary")
+        paste_btn.pack(side="right", padx=(5, 0))
         
         # Target selection section
         target_frame = tb.LabelFrame(main_frame, text="Target Board", padding=10)
@@ -229,12 +234,9 @@ class FlashGUI:
         except:
             pass
         
-        # Setup drag and drop
-        try:
-            self.root.drop_target_register(tk.DND_FILES)
-            self.root.dnd_bind('<<Drop>>', self.on_drop_file)
-        except Exception as e:
-            print(f"Warning: Drag-and-drop not supported: {e}")
+        # Setup add-and-drop: drag & drop where the runtime supports it,
+        # plus clipboard paste everywhere (Cmd/Ctrl+V or the Paste button).
+        self._setup_dnd()
             
         # Auto-detect ST-Link connection on startup
         self.auto_detect_stlink()
@@ -269,9 +271,14 @@ class FlashGUI:
         
         self.hex_entry = tk.Entry(hex_row, textvariable=self.hex_var)
         self.hex_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
-        
+        self.hex_entry.bind("<Command-v>", self._paste_hex, add="+")
+        self.hex_entry.bind("<Control-v>", self._paste_hex, add="+")
+
         hex_btn = tk.Button(hex_row, text="Browse...", command=self.select_hex_file)
         hex_btn.pack(side="right")
+
+        paste_btn = tk.Button(hex_row, text="Paste", command=self._paste_hex)
+        paste_btn.pack(side="right", padx=(5, 0))
         
         target_frame = tk.LabelFrame(main_frame, text="Target Board", padx=10, pady=10)
         target_frame.pack(fill="x", pady=(0, 15))
@@ -330,12 +337,9 @@ class FlashGUI:
         
         self.reinstall_btn = tk.Button(bottom_frame, text="Reinstall OpenOCD", command=self.reinstall_openocd)
         self.reinstall_btn.pack(side="left", fill="x", expand=True, padx=(0, 5))
-        
-        try:
-            self.root.drop_target_register(tk.DND_FILES)
-            self.root.dnd_bind('<<Drop>>', self.on_drop_file)
-        except Exception as e:
-            print(f"Warning: Drag-and-drop not supported: {e}")
+
+        # Setup add-and-drop (same as the enhanced UI)
+        self._setup_dnd()
             
         self.auto_detect_stlink()
 
@@ -352,14 +356,82 @@ class FlashGUI:
             print(f"Error selecting file: {e}")
 
     def on_drop_file(self, event):
-        """Handle dropped files"""
+        """Handle a dropped file (tkdnd).
+
+        tkdnd passes the path(s) as ``event.data``; paths containing spaces
+        are quoted, so parse conservatively and take the first file.
+        """
         try:
-            if event.data:
-                files = event.data.split()
-                if files and files[0].endswith('.hex'):
-                    self.hex_var.set(files[0])
+            data = (event.data or "").strip()
+            if not data:
+                return
+            if data.startswith('"'):
+                path = data.split('"')[1]
+            else:
+                path = data.split()[0]
+            self._accept_file_path(path)
         except Exception as e:
             print(f"Error handling drop: {e}")
+
+    def _paths_dropped(self, paths):
+        """Windows OLE drop callback: first file becomes the hex file."""
+        if paths:
+            self._accept_file_path(paths[0])
+
+    def _accept_file_path(self, raw):
+        """Accept a firmware path from a drop or paste and reflect it in the UI."""
+        if not raw:
+            return False
+        path = str(raw).strip()
+        if len(path) >= 2 and path[0] == '"' and path.endswith('"'):
+            path = path[1:-1].strip()
+        if not path:
+            return False
+        path = os.path.expanduser(path)
+        if not os.path.isfile(path):
+            self.set_status(f"Path not found: {os.path.basename(path)}")
+            return False
+        self.hex_var.set(path)
+        self.set_status(f"Firmware file set: {os.path.basename(path)}")
+        return True
+
+    def _paste_hex(self, _event=None):
+        """Cmd/Ctrl+V or the Paste button: load a file path from the clipboard."""
+        try:
+            text = self.root.clipboard_get()
+        except Exception:
+            self.set_status("Clipboard has no readable content")
+            return
+        if not self._accept_file_path(text):
+            self.set_status("Clipboard doesn't contain a usable file path")
+
+    def _setup_dnd(self):
+        """Enable drag & drop, best mechanism first.
+
+        1) tkdnd (Tcl DnD extension - present in some Tcl builds);
+        2) native Windows OLE drop target (dnd_win; the shipped Tk builds
+           have no tkdnd package);
+        3) none - Browse and Paste remain fully available.
+        """
+        try:
+            self.root.drop_target_register(tk.DND_FILES)
+            self.root.dnd_bind("<<Drop>>", self.on_drop_file)
+            self.dnd_enabled = True
+            print("[dnd] drag & drop enabled via tkdnd")
+            return
+        except Exception:
+            pass
+        if os.name == "nt":
+            try:
+                import dnd_win
+                if dnd_win.register(self.root, self._paths_dropped):
+                    self.dnd_enabled = True
+                    print("[dnd] drag & drop enabled via Windows OLE")
+                    return
+            except Exception as e:
+                print(f"[dnd] Windows OLE registration failed: {e}")
+        self.dnd_enabled = False
+        print("[dnd] drag & drop unavailable here; use Browse or Paste (Cmd/Ctrl+V)")
 
     def set_status(self, message, color="blue"):
         """Set status text"""
